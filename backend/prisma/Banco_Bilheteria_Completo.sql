@@ -1,6 +1,4 @@
--- BANCO COMPLETO ATUAL, SOMENTE PARA BANCO VAZIO DE ESTUDO.
--- No aplicativo use npm run db:migrate para registrar as três migrações.
--- Este DDL não preenche _prisma_migrations. Não misture as duas rotas.
+
 BEGIN;
 SET LOCAL search_path TO public;
 -- CreateSchema
