@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PerfilUsuario {
+  CLIENTE
+  OPERADOR
+
+  @@map("perfil_usuario")
+}
+
+enum TipoEvento {
+  FILME
+  EVENTO
+
+  @@map("tipo_evento")
+}
+
+enum SituacaoReserva {
+  PENDENTE
+  PAGA
+  EXPIRADA
+
+  @@map("situacao_reserva")
+}
+
+enum CanalVenda {
+  INTERNET
+  BALCAO
+
+  @@map("canal_venda")
+}
+
+model Usuario {
+  id               String        @id(map: "pk_usuarios") @default(uuid()) @db.Uuid
+  nome             String
+  email            String        @unique(map: "uq_usuarios_email")
+  hashSenha        String        @map("hash_senha")
+  perfil           PerfilUsuario @default(CLIENTE)
+  criadoEm         DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  reservations     Reserva[]
+  validatedTickets Ingresso[]    @relation("Validator")
+
+  @@map("usuarios")
+}
+
+model Evento {
+  id        String     @id(map: "pk_eventos") @default(uuid()) @db.Uuid
+  titulo    String
+  descricao String     @default("")
+  tipo      TipoEvento
+  sessions  Sessao[]
+
+  @@map("eventos")
+}
+
+model Sala {
+  id       String    @id(map: "pk_salas") @default(uuid()) @db.Uuid
+  nome     String
+  seats    Assento[]
+  sessions Sessao[]
+
+  @@map("salas")
+}
+
+model Assento {
+  id           String          @id(map: "pk_assentos") @default(uuid()) @db.Uuid
+  salaId       String          @map("sala_id") @db.Uuid
+  fila         String
+  numero       Int
+  room         Sala            @relation(fields: [salaId], references: [id], onDelete: Restrict, map: "fk_assentos_sala_id")
+  sessionSeats AssentoSessao[]
+
+  @@unique([salaId, fila, numero], map: "uq_assentos_sala_id_fila_numero")
+  @@unique([id, salaId], map: "uq_assentos_id_sala_id")
+  @@map("assentos")
+}
+
+model Sessao {
+  id           String          @id(map: "pk_sessoes") @default(uuid()) @db.Uuid
+  eventoId     String          @map("evento_id") @db.Uuid
+  salaId       String          @map("sala_id") @db.Uuid
+  inicioEm     DateTime        @map("inicio_em") @db.Timestamptz(3)
+  preco        Decimal         @db.Decimal(12, 2)
+  event        Evento          @relation(fields: [eventoId], references: [id], onDelete: Restrict, map: "fk_sessoes_evento_id")
+  room         Sala            @relation(fields: [salaId], references: [id], onDelete: Restrict, map: "fk_sessoes_sala_id")
+  seats        AssentoSessao[]
+  reservations Reserva[]
+
+  @@unique([id, salaId], map: "uq_sessoes_id_sala_id")
+  @@index([inicioEm], map: "idx_sessoes_inicio_em")
+  @@index([eventoId], map: "idx_sessoes_evento_id")
+  @@index([salaId], map: "idx_sessoes_sala_id")
+  @@map("sessoes")
+}
+
+model AssentoSessao {
+  id                 String        @id(map: "pk_assentos_sessao") @default(uuid()) @db.Uuid
+  sessaoId           String        @map("sessao_id") @db.Uuid
+  assentoId          String        @map("assento_id") @db.Uuid
+  salaId             String        @map("sala_id") @db.Uuid
+  reservaAtualId     String?       @map("reserva_atual_id") @db.Uuid
+  session            Sessao        @relation(fields: [sessaoId, salaId], references: [id, salaId], onDelete: Restrict, map: "fk_assentos_sessao_sessao_id_sala_id")
+  seat               Assento       @relation(fields: [assentoId, salaId], references: [id, salaId], onDelete: Restrict, map: "fk_assentos_sessao_assento_id_sala_id")
+  currentReservation Reserva?      @relation("CurrentReservation", fields: [reservaAtualId, sessaoId], references: [id, sessaoId], onDelete: Restrict, map: "fk_assentos_sessao_reserva_atual_id_sessao_id")
+  items              ItemReserva[]
+  ticket             Ingresso?
+
+  @@unique([sessaoId, assentoId], map: "uq_assentos_sessao_sessao_id_assento_id")
+  @@unique([id, sessaoId], map: "uq_assentos_sessao_id_sessao_id")
+  @@index([assentoId], map: "idx_assentos_sessao_assento_id")
+  @@index([reservaAtualId], map: "idx_assentos_sessao_reserva_atual_id")
+  @@map("assentos_sessao")
+}
+
+model Reserva {
+  id           String          @id(map: "pk_reservas") @default(uuid()) @db.Uuid
+  sessaoId     String          @map("sessao_id") @db.Uuid
+  usuarioId    String          @map("usuario_id") @db.Uuid
+  situacao     SituacaoReserva @default(PENDENTE)
+  canalVenda   CanalVenda      @default(INTERNET) @map("canal_venda")
+  expiraEm     DateTime        @map("expira_em") @db.Timestamptz(3)
+  valorTotal   Decimal         @map("valor_total") @db.Decimal(12, 2)
+  criadoEm     DateTime        @default(now()) @map("criado_em") @db.Timestamptz(3)
+  session      Sessao          @relation(fields: [sessaoId], references: [id], onDelete: Restrict, map: "fk_reservas_sessao_id")
+  user         Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Restrict, map: "fk_reservas_usuario_id")
+  items        ItemReserva[]
+  currentSeats AssentoSessao[] @relation("CurrentReservation")
+  payment      Pagamento?
+
+  @@unique([id, sessaoId], map: "uq_reservas_id_sessao_id")
+  @@index([situacao, expiraEm], map: "idx_reservas_situacao_expira_em")
+  @@index([usuarioId], map: "idx_reservas_usuario_id")
+  @@index([sessaoId], map: "idx_reservas_sessao_id")
+  @@map("reservas")
+}
+
+model ItemReserva {
+  id              String        @id(map: "pk_itens_reserva") @default(uuid()) @db.Uuid
+  reservaId       String        @map("reserva_id") @db.Uuid
+  assentoSessaoId String        @map("assento_sessao_id") @db.Uuid
+  sessaoId        String        @map("sessao_id") @db.Uuid
+  precoUnitario   Decimal       @map("preco_unitario") @db.Decimal(12, 2)
+  reservation     Reserva       @relation(fields: [reservaId, sessaoId], references: [id, sessaoId], onDelete: Restrict, map: "fk_itens_reserva_reserva_id_sessao_id")
+  sessionSeat     AssentoSessao @relation(fields: [assentoSessaoId, sessaoId], references: [id, sessaoId], onDelete: Restrict, map: "fk_itens_reserva_assento_sessao_id_sessao_id")
+  ticket          Ingresso?
+
+  @@unique([reservaId, assentoSessaoId], map: "uq_itens_reserva_reserva_id_assento_sessao_id")
+  @@unique([id, assentoSessaoId], map: "uq_itens_reserva_id_assento_sessao_id")
+  @@index([assentoSessaoId], map: "idx_itens_reserva_assento_sessao_id")
+  @@map("itens_reserva")
+}
+
+model Pagamento {
+  id          String   @id(map: "pk_pagamentos") @default(uuid()) @db.Uuid
+  reservaId   String   @unique(map: "uq_pagamentos_reserva_id") @map("reserva_id") @db.Uuid
+  valor       Decimal  @db.Decimal(12, 2)
+  pagoEm      DateTime @default(now()) @map("pago_em") @db.Timestamptz(3)
+  simulado    Boolean  @default(true)
+  reservation Reserva  @relation(fields: [reservaId], references: [id], onDelete: Restrict, map: "fk_pagamentos_reserva_id")
+
+  @@map("pagamentos")
+}
+
+model Ingresso {
+  id              String              @id(map: "pk_ingressos") @default(uuid()) @db.Uuid
+  itemReservaId   String              @unique(map: "uq_ingressos_item_reserva_id") @map("item_reserva_id") @db.Uuid
+  assentoSessaoId String              @unique(map: "uq_ingressos_assento_sessao_id") @map("assento_sessao_id") @db.Uuid
+  codigo          String              @unique(map: "uq_ingressos_codigo")
+  emitidoEm       DateTime            @default(now()) @map("emitido_em") @db.Timestamptz(3)
+  utilizadoEm     DateTime?           @map("utilizado_em") @db.Timestamptz(3)
+  validadoPorId   String?             @map("validado_por_id") @db.Uuid
+  item            ItemReserva         @relation(fields: [itemReservaId, assentoSessaoId], references: [id, assentoSessaoId], onDelete: Restrict, map: "fk_ingressos_item_reserva_id_assento_sessao_id")
+  sessionSeat     AssentoSessao       @relation(fields: [assentoSessaoId], references: [id], onDelete: Restrict, map: "fk_ingressos_assento_sessao_id")
+  validatedBy     Usuario?            @relation("Validator", fields: [validadoPorId], references: [id], onDelete: Restrict, map: "fk_ingressos_validado_por_id")
+  audit           AuditoriaIngresso[]
+
+  @@unique([itemReservaId, assentoSessaoId], map: "uq_ingressos_item_reserva_id_assento_sessao_id")
+  @@index([validadoPorId], map: "idx_ingressos_validado_por_id")
+  @@map("ingressos")
+}
+
+model AuditoriaIngresso {
+  id            BigInt    @id(map: "pk_auditorias_ingressos") @default(autoincrement())
+  ingressoId    String    @map("ingresso_id") @db.Uuid
+  acao          String
+  registradoEm  DateTime  @default(now()) @map("registrado_em") @db.Timestamptz(3)
+  usoAnteriorEm DateTime? @map("uso_anterior_em") @db.Timestamptz(3)
+  usoAtualEm    DateTime? @map("uso_atual_em") @db.Timestamptz(3)
+  responsavelId String?   @map("responsavel_id") @db.Uuid
+  ticket        Ingresso  @relation(fields: [ingressoId], references: [id], onDelete: Restrict, map: "fk_auditorias_ingressos_ingresso_id")
+
+  @@index([ingressoId], map: "idx_auditorias_ingressos_ingresso_id")
+  @@map("auditorias_ingressos")
+}
